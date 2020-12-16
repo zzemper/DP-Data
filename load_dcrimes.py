@@ -22,8 +22,6 @@ def read_json(JSON_FNAME):
     This function reads from the JSON cache file and returns a dictionary from the cache data.
     If the file doesn’t exist, it returns an empty dictionary.
     """
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    JSON_FNAME = dir_path + '/' + "DPD_Citizen_Complaints.json"
     try:
         cache_file = open(JSON_FNAME, 'r', encoding="utf-8") # Try to read the data from the file
         cache_contents = cache_file.read()  # If it's there, get it into a string
@@ -194,17 +192,40 @@ def create_citizen_complaints_table(cur,conn):
 def create_all_detroit_crimes_table(cur,conn):
     #call read_json to get complaints json data into a dictionary
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    JSON_FNAME = dir_path + '/' + "DPD_Citizen_Complaints.json"
+    JSON_FNAME = dir_path + '/' + "Crime_Incidents.json"
     crime_dict = read_json(JSON_FNAME)
+
+    i = 0
+    for crime in crime_dict["features"]:
+        if "year" not in crime["properties"]:
+            continue
+        if crime["properties"]["year"] == 2019:
+            id = i
+            unit_raw = crime["properties"]["precinct"]
+
+            if unit_raw == '0':
+                unit = 0
+            elif 'W' in unit_raw or 'H' in unit_raw:
+                continue
+            elif unit_raw[0] == '0':
+                unit_raw = unit_raw[1]
+                unit = unit_calculator(unit_raw)
+            else:
+                unit = unit_calculator(unit_raw)
+            charge = crime["properties"]["charge_description"]
+
+            cur.execute("INSERT INTO All_Detroit_Crimes (crime_id, unit_id, charge) VALUES (?,?,?)", (id, unit, charge))
+            i += 1
+            if i == 10000:
+                print("10,000 done, more comin")
+            conn.commit()
 
 
 
 
 def main():
     '''
-    This function sets up the database and creates the entire State_Crimes table
-    using create_database(db_file) and create_state_crime_counts_table(cur, conn, start, end, start_year),
-    while limiting stored data to at most 25 rows at a time.
+    This function sets up the database.
     '''
     # SETUP DATABASE AND TABLE
     cur, conn = create_database('detroit_crime.db')
@@ -219,7 +240,10 @@ def main():
     if row_count_c == 0:
         create_citizen_complaints_table(cur,conn)
 
-    create_all_detroit_crimes_table(cur,conn)
+    cur.execute('SELECT COUNT(*) FROM All_Detroit_Crimes')
+    row_count_c = cur.fetchone()[0]
+    if row_count_c == 0:
+        create_all_detroit_crimes_table(cur,conn)
 
 if __name__ == "__main__":
     main()
